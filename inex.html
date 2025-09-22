@@ -808,7 +808,28 @@
         <div id="points-info-toast-content"></div>
     </div>
     <div id="pointing-arrow"></div>
+<!-- =================== Firebase Scripts (هذا هو الكود الجاهز) =================== -->
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-firestore.js"></script>
 
+    <script>
+      // Your web app's Firebase configuration
+      const firebaseConfig = {
+        apiKey: "AIzaSyB92ooyA5_tTx1BLDp2EWmqxHuJQ3zqah4",
+        authDomain: "mora-for-studying.firebaseapp.com",
+        projectId: "mora-for-studying",
+        storageBucket: "mora-for-studying.firebasestorage.app",
+        messagingSenderId: "213416531900",
+        appId: "1:213416531900:web:2e4d8bd2a9e1a4e814bdb9"
+      };
+
+      // Initialize Firebase
+      firebase.initializeApp(firebaseConfig);
+      const auth = firebase.auth();
+      const db = firebase.firestore();
+    </script>
+    <!-- ================================================================================= -->
     <script>
 document.addEventListener('DOMContentLoaded', () => {
     // Initial static data (will be moved to localStorage if not present)
@@ -1870,7 +1891,76 @@ document.addEventListener('DOMContentLoaded', () => {
     loginChoiceBtn.addEventListener('click', () => { const users = getUsersDB(); if (Object.keys(users).filter(u => u !== 'admen').length === 0 && !users['admen']) { showAuthMessage('auth_error_no_account'); return; } showAuthView('login'); });
     document.querySelectorAll('.back-to-choice-btn').forEach(btn => btn.addEventListener('click', () => showAuthView('choice')));
     createAccountForm.addEventListener('submit', (e) => {
-        e.preventDefault();
+   createAccountForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('create-name').value.trim();
+    // Firebase يحتاج لإيميل، سنقوم بإنشاء إيميل وهمي من اسم المستخدم ليعمل النظام
+    const emailForAuth = name.toLowerCase().replace(/\s/g, '_') + "@mora.com"; 
+    const password = document.getElementById('create-password').value;
+    const userInputCaptcha = document.getElementById('captcha-input').value;
+    const country = document.getElementById('create-country').value;
+    const governorate = document.getElementById('create-governorate').value;
+    const yearSelect = document.getElementById("year");
+    const majorSelect = document.getElementById("major");
+    const semesterSelect = document.getElementById("semester");
+
+    // --- التحقق من البيانات ---
+    if (!e.target.checkValidity() || !name || !yearSelect.value || !majorSelect.value) {
+        showAuthMessage('fill_all_fields');
+        return;
+    }
+    if (password.length < 8 || !/^(?=.[a-zA-Z])(?=.[0-9])/.test(password)) {
+        showAuthMessage(password.length < 8 ? 'password_error_length' : 'password_error_format');
+        return;
+    }
+    if (name.toLowerCase() === 'admen') {
+        showAuthMessage('auth_error_user_exists');
+        return;
+    }
+    if (userInputCaptcha !== captchaText) {
+        showAuthMessage('captcha_error');
+        generateNumericCaptcha();
+        document.getElementById('captcha-input').value = '';
+        return;
+    }
+    
+    // --- الجزء الخاص بـ Firebase ---
+    // 1. إنشاء المستخدم في نظام المصادقة (Authentication)
+    auth.createUserWithEmailAndPassword(emailForAuth, password)
+      .then((userCredential) => {
+        // إذا نجح إنشاء الحساب، نحفظ باقي بياناته في قاعدة البيانات (Firestore)
+        const user = userCredential.user;
+        
+        // 2. حفظ بيانات الطالب الإضافية في collection اسمها "users"
+        db.collection("users").doc(user.uid).set({
+            name: name, // الاسم الحقيقي الذي أدخله الطالب
+            year: yearSelect.value,
+            major: majorSelect.options[majorSelect.selectedIndex].text,
+            semester: semesterSelect.value,
+            country: country,
+            governorate: governorate,
+            points: 0, 
+            rated: false,
+            banned: false,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp() // تاريخ إنشاء الحساب
+        })
+        .then(() => {
+            // بعد الحفظ بنجاح، ننتقل لواجهة تسجيل الدخول
+            showAuthView('login', { newName: name, newPassword: password });
+        })
+        .catch((error) => {
+            console.error("خطأ في حفظ بيانات الطالب في Firestore: ", error);
+        });
+      })
+      .catch((error) => {
+        // إذا كان الاسم (الإيميل الوهمي) مستخدماً من قبل
+        if (error.code === 'auth/email-already-in-use') {
+            showAuthMessage('auth_error_user_exists');
+        } else {
+            console.error("خطأ في إنشاء الحساب: ", error);
+        }
+      });
+});     
         const name = document.getElementById('create-name').value.trim();
         const password = document.getElementById('create-password').value;
         const userInputCaptcha = captchaInput.value;
@@ -1891,38 +1981,62 @@ document.addEventListener('DOMContentLoaded', () => {
         showAuthView('login', { newName: name, newPassword: password });
     });
 
+    loginForm.addEventListener('submit', (e) => { 
     loginForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const name = document.getElementById('login-name').value.trim();
-        const password = document.getElementById('login-password').value;
-        if (!name || !password) { showAuthMessage('fill_all_fields'); return; }
+    e.preventDefault();
+    const name = document.getElementById('login-name').value.trim();
+    const password = document.getElementById('login-password').value;
 
-        if (name.toLowerCase() === 'admen' && password === 'Amr1221@gmail.com') {
-            localStorage.setItem(CURRENT_USER_KEY, 'admen');
-            localStorage.setItem('moraCurrentUserRole', 'admin');
-            loginPage.classList.add('exit');
-            setTimeout(() => { 
-                loginPage.classList.remove('active', 'exit'); 
-                loadingPage.classList.add('active');
-                setTimeout(() => {
-                    loadingPage.classList.remove('active');
-                    showAdminPanel();
-                }, 1500);
-            }, 700);
-            return;
+    if (!name || !password) {
+        showAuthMessage('fill_all_fields');
+        return;
+    }
+
+    // --- تسجيل دخول الأدمن (يبقى كما هو) ---
+    if (name.toLowerCase() === 'admen' && password === 'Amr1221@gmail.com') {
+        localStorage.setItem('moraCurrentUserRole', 'admin');
+        showAdminPanel(); // سيتم تعديل هذه الدالة لاحقًا
+        return;
+    }
+
+    // --- تسجيل دخول الطلاب باستخدام Firebase ---
+    const emailForAuth = name.toLowerCase().replace(/\s/g, '_') + "@mora.com";
+
+    auth.signInWithEmailAndPassword(emailForAuth, password)
+      .then((userCredential) => {
+        const user = userCredential.user;
+        const userDocRef = db.collection("users").doc(user.uid);
+        
+        return userDocRef.get(); // جلب بيانات الطالب من قاعدة البيانات
+      })
+      .then((doc) => {
+        if (doc.exists) {
+            const userData = doc.data();
+
+            // التحقق إذا كان الحساب محظورًا
+            if (userData.banned) {
+                showAuthMessage('auth_error_banned');
+                auth.signOut(); // تسجيل الخروج فورًا إذا كان محظورًا
+                return;
+            }
+            
+            // إذا لم يكن محظورًا، استكمل الدخول
+            localStorage.setItem(LAST_USER_KEY, userData.name);
+            
+            populateMainPage(userData);
+            transitionToPage(mainPage); // سيتم تعديل هذه الدالة لاحقًا
+            checkAnnouncement(); 
+        } else {
+            console.error("User authenticated but no data found in Firestore!");
+            auth.signOut();
+            showAuthMessage('auth_error_wrong_pass');
         }
-
-        const db = getUsersDB();
-        const user = db[name];
-        if (!user || user.password !== password) { showAuthMessage('auth_error_wrong_pass'); return; }
-        if (user.data?.banned) { showAuthMessage('auth_error_banned'); return; }
-        
-        localStorage.setItem(CURRENT_USER_KEY, name);
-        localStorage.setItem('moraCurrentUserRole', 'student');
-        localStorage.setItem(LAST_USER_KEY, name);
-        
-        loginPage.classList.add('exit');
-        setTimeout(() => { 
+      })
+      .catch((error) => {
+        console.error("Login Error:", error.code);
+        showAuthMessage('auth_error_wrong_pass');
+      });
+});
             loginPage.classList.remove('active', 'exit'); 
             loadingPage.classList.add('active'); 
             setTimeout(() => {
